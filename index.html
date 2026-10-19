@@ -3,6 +3,8 @@
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fechamento de caixa</title>
+<link rel="preconnect" href="https://script.google.com" crossorigin>
+<link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <meta charset="utf-8">
 <style>
   * { box-sizing: border-box; }
@@ -116,6 +118,8 @@
   var MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho',
                'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   var lista = [];
+  var temDados = false;
+  var atual = { nome: '', cnpj: '' };
   var centavos = { cartao: 0, pix: 0, dinheiro: 0 };
   var numero = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -232,7 +236,7 @@
       vazio.className = 'vazio';
       var td = document.createElement('td');
       td.colSpan = 5;
-      td.textContent = 'Nenhum dia registrado neste mês.';
+      td.textContent = temDados ? 'Nenhum dia registrado neste mês.' : 'Carregando...';
       vazio.appendChild(td);
       tbody.appendChild(vazio);
       return;
@@ -285,6 +289,8 @@
 
     enviar(dados, function (novaLista) {
       lista = novaLista || [];
+      temDados = true;
+      salvarCache({ nome: atual.nome, cnpj: atual.cnpj, lista: lista });
       desenharTabela(data);
       aviso('✓ Faturamento de ' + dataBR(data) + ' registrado: ' + reais(soma / 100), 'ok');
       elData.value = hojeISO();
@@ -298,24 +304,48 @@
     });
   });
 
-  function iniciar(dados) {
-    lista = dados.lista || [];
-    document.getElementById('nome').textContent = dados.nome || '';
-    document.getElementById('cnpj').textContent = dados.cnpj ? 'CNPJ ' + dados.cnpj : '';
-    document.getElementById('estado').hidden = true;
-    document.getElementById('app').hidden = false;
-    elData.value = hojeISO();
-    elData.max = hojeISO();
-    preencher(null);
-    desenharTabela(null);
-    if (buscarDia(elData.value)) aviso('Hoje já foi registrado. Se registrar de novo, os valores serão substituídos.', 'info');
-    document.getElementById('cartao').focus();
+  // Memória do navegador: na próxima abertura a tela já aparece com nome, CNPJ e tabela
+  var CHAVE_CACHE = 'caixa:' + CODIGO;
+  function lerCache() {
+    try { var t = localStorage.getItem(CHAVE_CACHE); return t ? JSON.parse(t) : null; } catch (e) { return null; }
+  }
+  function salvarCache(d) {
+    try { localStorage.setItem(CHAVE_CACHE, JSON.stringify({ nome: d.nome, cnpj: d.cnpj, lista: d.lista })); } catch (e) {}
+  }
+  function apagarCache() {
+    try { localStorage.removeItem(CHAVE_CACHE); } catch (e) {}
   }
 
+  function aplicarDados(dados) {
+    lista = dados.lista || [];
+    temDados = true;
+    atual = { nome: dados.nome || '', cnpj: dados.cnpj || '' };
+    document.getElementById('nome').textContent = atual.nome;
+    document.getElementById('cnpj').textContent = atual.cnpj ? 'CNPJ ' + atual.cnpj : '';
+    desenharTabela(null);
+    if (!elAviso.textContent && buscarDia(elData.value)) {
+      aviso('Hoje já foi registrado. Se registrar de novo, os valores serão substituídos.', 'info');
+    }
+  }
+
+  // A tela abre na hora; os dados atualizados chegam logo depois, sem apagar o que já foi digitado
+  document.getElementById('estado').hidden = true;
+  document.getElementById('app').hidden = false;
+  elData.value = hojeISO();
+  elData.max = hojeISO();
+  preencher(null);
+  var guardado = lerCache();
+  if (guardado) aplicarDados(guardado);
+  else { document.getElementById('nome').textContent = 'Carregando...'; desenharTabela(null); }
+  document.getElementById('cartao').focus();
+
   carregar(
-    iniciar,
-    function () { mostrarEstado('Link inválido', 'Fale com o NOTA 360 para receber o link correto.'); },
-    function () { mostrarEstado('Não foi possível carregar', 'Verifique a internet e recarregue a página (F5).'); }
+    function (dados) { aplicarDados(dados); salvarCache(dados); },
+    function () { apagarCache(); mostrarEstado('Link inválido', 'Fale com o NOTA 360 para receber o link correto.'); },
+    function () {
+      if (guardado) aviso('Sem conexão no momento. Verifique a internet antes de registrar.', 'erro');
+      else mostrarEstado('Não foi possível carregar', 'Verifique a internet e recarregue a página (F5).');
+    }
   );
 </script>
 </body>
