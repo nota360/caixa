@@ -43,6 +43,7 @@
   tbody tr.novo td { background: #e6f4ea; }
   tbody tr.vazio { cursor: default; }
   tbody tr.vazio td { color: #999; text-align: left; background: none; }
+  table.sem-dinheiro .col-din { display: none; }
   tfoot td { font-weight: bold; border-top: 2px solid #ddd; border-bottom: 0; }
   .dica { color: #888; font-size: 13px; margin-top: 10px; }
   @media (max-width: 920px) {
@@ -69,8 +70,10 @@
     <label for="pix">PIX</label>
     <input id="pix" class="valor" type="text" inputmode="numeric" autocomplete="off">
 
-    <label for="dinheiro">Dinheiro</label>
-    <input id="dinheiro" class="valor" type="text" inputmode="numeric" autocomplete="off">
+    <div id="blocoDinheiro">
+      <label for="dinheiro">Dinheiro</label>
+      <input id="dinheiro" class="valor" type="text" inputmode="numeric" autocomplete="off">
+    </div>
 
     <div class="total"><span>Total do dia</span><strong id="total">R$ 0,00</strong></div>
 
@@ -82,7 +85,7 @@
     <h2 id="tituloTabela">Lançamentos do mês</h2>
     <table>
       <thead>
-        <tr><th>Data</th><th>Cartão</th><th>PIX</th><th>Dinheiro</th><th>Total</th></tr>
+        <tr><th>Data</th><th>Cartão</th><th>PIX</th><th class="col-din">Dinheiro</th><th>Total</th></tr>
       </thead>
       <tbody id="tabela"></tbody>
       <tfoot id="rodape"></tfoot>
@@ -93,7 +96,7 @@
 
 <script>
   // Endereço do app do Google: cole aqui o endereço que termina em /exec
-  var API = 'https://script.google.com/macros/s/AKfycbwWPgUHk9KfoV4nj26JTED_aoiDXEWGuGmJd1a4KsbU-HKhQxf060fKosnDNGJdwtjr/exec';
+  var API = 'COLE_AQUI_O_ENDERECO_EXEC';
 
   var CODIGO = (new URLSearchParams(location.search).get('cliente') || '').trim();
 
@@ -120,6 +123,7 @@
   var lista = [];
   var temDados = false;
   var atual = { nome: '', cnpj: '' };
+  var usaDinheiro = true;
   var centavos = { cartao: 0, pix: 0, dinheiro: 0 };
   var numero = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -194,7 +198,8 @@
         atualizarTotal();
       } else if (ev.key === 'Enter') {
         ev.preventDefault();
-        if (i < CAMPOS.length - 1) document.getElementById(CAMPOS[i + 1]).focus();
+        var prox = CAMPOS.slice(i + 1).filter(function (x) { return x !== 'dinheiro' || usaDinheiro; })[0];
+        if (prox) document.getElementById(prox).focus();
         else btn.focus();
       }
     });
@@ -251,7 +256,7 @@
       celula(tr, dataBR(dia.data));
       celula(tr, numero.format(dia.cartao));
       celula(tr, numero.format(dia.pix));
-      celula(tr, numero.format(dia.dinheiro));
+      celula(tr, numero.format(dia.dinheiro), 'col-din');
       celula(tr, numero.format(total), 'tot');
       tr.addEventListener('click', function () {
         elData.value = dia.data;
@@ -266,7 +271,7 @@
     celula(rodape, 'Total do mês');
     celula(rodape, numero.format(soma.cartao));
     celula(rodape, numero.format(soma.pix));
-    celula(rodape, numero.format(soma.dinheiro));
+    celula(rodape, numero.format(soma.dinheiro), 'col-din');
     celula(rodape, numero.format(soma.cartao + soma.pix + soma.dinheiro));
     tfoot.appendChild(rodape);
   }
@@ -290,7 +295,7 @@
     enviar(dados, function (novaLista) {
       lista = novaLista || [];
       temDados = true;
-      salvarCache({ nome: atual.nome, cnpj: atual.cnpj, lista: lista });
+      salvarCache({ nome: atual.nome, cnpj: atual.cnpj, dinheiro: usaDinheiro, lista: lista });
       desenharTabela(data);
       aviso('✓ Faturamento de ' + dataBR(data) + ' registrado: ' + reais(soma / 100), 'ok');
       elData.value = hojeISO();
@@ -310,10 +315,18 @@
     try { var t = localStorage.getItem(CHAVE_CACHE); return t ? JSON.parse(t) : null; } catch (e) { return null; }
   }
   function salvarCache(d) {
-    try { localStorage.setItem(CHAVE_CACHE, JSON.stringify({ nome: d.nome, cnpj: d.cnpj, lista: d.lista })); } catch (e) {}
+    try { localStorage.setItem(CHAVE_CACHE, JSON.stringify({ nome: d.nome, cnpj: d.cnpj, dinheiro: d.dinheiro, lista: d.lista })); } catch (e) {}
   }
   function apagarCache() {
     try { localStorage.removeItem(CHAVE_CACHE); } catch (e) {}
+  }
+
+  // Clientes sem o campo Dinheiro: some o campo e a coluna, e o valor fica sempre zero
+  function definirDinheiro(sim) {
+    usaDinheiro = sim;
+    document.getElementById('blocoDinheiro').hidden = !sim;
+    document.querySelector('table').classList.toggle('sem-dinheiro', !sim);
+    if (!sim) { centavos.dinheiro = 0; mostrar('dinheiro'); atualizarTotal(); }
   }
 
   function aplicarDados(dados) {
@@ -322,6 +335,7 @@
     atual = { nome: dados.nome || '', cnpj: dados.cnpj || '' };
     document.getElementById('nome').textContent = atual.nome;
     document.getElementById('cnpj').textContent = atual.cnpj ? 'CNPJ ' + atual.cnpj : '';
+    definirDinheiro(dados.dinheiro !== false);
     desenharTabela(null);
     if (!elAviso.textContent && buscarDia(elData.value)) {
       aviso('Hoje já foi registrado. Se registrar de novo, os valores serão substituídos.', 'info');
