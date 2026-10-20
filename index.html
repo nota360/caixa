@@ -14,9 +14,10 @@
   .estado small { display: block; font-size: 15px; color: #777; margin-top: 8px; }
   .wrap { display: flex; gap: 48px; justify-content: center; align-items: flex-start; padding: 28px 24px 40px; }
   .form { width: 100%; max-width: 420px; }
-  h1 { font-size: 22px; margin: 0; text-align: center; }
-  .cliente { text-align: center; color: #444; font-size: 15px; margin: 4px 0 0; }
-  .cnpj { text-align: center; color: #555; font-size: 13px; font-weight: bold; margin: 3px 0 16px; letter-spacing: .3px; }
+  .cliente { text-align: center; color: #1f1f1f; font-size: 22px; font-weight: bold; margin: 0; line-height: 1.2; }
+  .cnpj { text-align: center; color: #333; font-size: 20px; font-weight: bold; margin: 4px 0 0; letter-spacing: .3px; }
+  .titulo-tela { text-align: center; color: #888; font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px;
+                 margin: 8px 0 16px; }
   label { display: block; font-size: 16px; font-weight: bold; margin: 12px 0 5px; }
   input { width: 100%; height: 54px; padding: 0 14px; font-size: 24px; font-family: inherit; color: #1f1f1f;
           background: #fff; border: 2px solid #cfcfcf; border-radius: 8px; }
@@ -43,10 +44,22 @@
   tbody tr.novo td { background: #e6f4ea; }
   tbody tr.vazio { cursor: default; }
   tbody tr.vazio td { color: #999; text-align: left; background: none; }
-  table.sem-dinheiro .col-din { display: none; }
+  table.sem-dinheiro .col-din, table.sem-voucher .col-vou { display: none; }
+  /* Total do mês no topo da tabela, só no celular */
+  tbody tr.total-topo { display: none; cursor: default; }
+  tbody tr.total-topo td { font-weight: bold; background: #f3f4f6; border-bottom: 2px solid #ddd; }
   tfoot td { font-weight: bold; border-top: 2px solid #ddd; border-bottom: 0; }
   .dica { color: #888; font-size: 13px; margin-top: 10px; }
   @media (max-width: 920px) {
+    tbody tr.total-topo { display: table-row; }
+    tfoot { display: none; }
+    .rolagem { overflow-x: auto; }
+    table { font-size: 11.5px; }
+    th, td { padding: 7px 2px; }
+    .wrap { padding-left: 14px; padding-right: 14px; }
+    .ano { display: none; }
+    .cliente { font-size: 20px; }
+    .cnpj { font-size: 17px; }
     .wrap { flex-direction: column; align-items: center; gap: 28px; }
     .lateral { width: 100%; max-width: 420px; padding-top: 0; }
   }
@@ -57,9 +70,9 @@
 
 <div class="wrap" id="app" hidden>
   <div class="form">
-    <h1>Fechamento de caixa</h1>
     <div class="cliente" id="nome"></div>
     <div class="cnpj" id="cnpj"></div>
+    <div class="titulo-tela">Fechamento de caixa</div>
 
     <label for="data">Data</label>
     <input id="data" type="date">
@@ -75,6 +88,11 @@
       <input id="dinheiro" class="valor" type="text" inputmode="numeric" autocomplete="off">
     </div>
 
+    <div id="blocoVoucher" hidden>
+      <label for="voucher">Voucher</label>
+      <input id="voucher" class="valor" type="text" inputmode="numeric" autocomplete="off">
+    </div>
+
     <div class="total"><span>Total do dia</span><strong id="total">R$ 0,00</strong></div>
 
     <button id="registrar" type="button">REGISTRAR</button>
@@ -83,13 +101,15 @@
 
   <div class="lateral">
     <h2 id="tituloTabela">Lançamentos do mês</h2>
+    <div class="rolagem">
     <table>
       <thead>
-        <tr><th>Data</th><th>Cartão</th><th>PIX</th><th class="col-din">Dinheiro</th><th>Total</th></tr>
+        <tr><th>Data</th><th>Cartão</th><th>PIX</th><th class="col-din">Dinheiro</th><th class="col-vou">Voucher</th><th>Total</th></tr>
       </thead>
       <tbody id="tabela"></tbody>
       <tfoot id="rodape"></tfoot>
     </table>
+    </div>
     <div class="dica">Para corrigir um dia, clique nele, ajuste os valores e registre de novo.</div>
   </div>
 </div>
@@ -117,14 +137,15 @@
       .catch(function () { falha('Sem conexão. Verifique a internet e tente de novo.'); });
   }
 
-  var CAMPOS = ['cartao', 'pix', 'dinheiro'];
+  var CAMPOS = ['cartao', 'pix', 'dinheiro', 'voucher'];
   var MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho',
                'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   var lista = [];
   var temDados = false;
   var atual = { nome: '', cnpj: '' };
   var usaDinheiro = true;
-  var centavos = { cartao: 0, pix: 0, dinheiro: 0 };
+  var usaVoucher = false;
+  var centavos = { cartao: 0, pix: 0, dinheiro: 0, voucher: 0 };
   var numero = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   var elData = document.getElementById('data');
@@ -164,7 +185,7 @@
     return soma;
   }
   function preencher(dia) {
-    CAMPOS.forEach(function (c) { centavos[c] = dia ? Math.round(dia[c] * 100) : 0; mostrar(c); });
+    CAMPOS.forEach(function (c) { centavos[c] = dia ? Math.round((dia[c] || 0) * 100) : 0; mostrar(c); });
     atualizarTotal();
   }
 
@@ -198,7 +219,7 @@
         atualizarTotal();
       } else if (ev.key === 'Enter') {
         ev.preventDefault();
-        var prox = CAMPOS.slice(i + 1).filter(function (x) { return x !== 'dinheiro' || usaDinheiro; })[0];
+        var prox = CAMPOS.slice(i + 1).filter(campoVisivel)[0];
         if (prox) document.getElementById(prox).focus();
         else btn.focus();
       }
@@ -240,23 +261,40 @@
       var vazio = document.createElement('tr');
       vazio.className = 'vazio';
       var td = document.createElement('td');
-      td.colSpan = 5;
+      td.colSpan = 6;
       td.textContent = temDados ? 'Nenhum dia registrado neste mês.' : 'Carregando...';
       vazio.appendChild(td);
       tbody.appendChild(vazio);
       return;
     }
 
-    var soma = { cartao: 0, pix: 0, dinheiro: 0 };
+    var soma = { cartao: 0, pix: 0, dinheiro: 0, voucher: 0 };
+    doMes.forEach(function (dia) { CAMPOS.forEach(function (c) { soma[c] += dia[c] || 0; }); });
+
+    var linhaTotal = function (classe) {
+      var tr = document.createElement('tr');
+      if (classe) tr.className = classe;
+      celula(tr, 'Total do mês');
+      celula(tr, numero.format(soma.cartao));
+      celula(tr, numero.format(soma.pix));
+      celula(tr, numero.format(soma.dinheiro), 'col-din');
+      celula(tr, numero.format(soma.voucher), 'col-vou');
+      celula(tr, numero.format(soma.cartao + soma.pix + soma.dinheiro + soma.voucher));
+      return tr;
+    };
+    tbody.appendChild(linhaTotal('total-topo'));   // aparece no topo só no celular
+
     doMes.forEach(function (dia) {
       var tr = document.createElement('tr');
       if (dia.data === destaque) tr.className = 'novo';
-      var total = dia.cartao + dia.pix + dia.dinheiro;
-      CAMPOS.forEach(function (c) { soma[c] += dia[c]; });
+      var total = (dia.cartao || 0) + (dia.pix || 0) + (dia.dinheiro || 0) + (dia.voucher || 0);
       celula(tr, dataBR(dia.data));
-      celula(tr, numero.format(dia.cartao));
-      celula(tr, numero.format(dia.pix));
-      celula(tr, numero.format(dia.dinheiro), 'col-din');
+      var cel = tr.lastChild; var p = dia.data.split('-');
+      cel.innerHTML = p[2] + '/' + p[1] + '<span class="ano">/' + p[0] + '</span>';
+      celula(tr, numero.format(dia.cartao || 0));
+      celula(tr, numero.format(dia.pix || 0));
+      celula(tr, numero.format(dia.dinheiro || 0), 'col-din');
+      celula(tr, numero.format(dia.voucher || 0), 'col-vou');
       celula(tr, numero.format(total), 'tot');
       tr.addEventListener('click', function () {
         elData.value = dia.data;
@@ -267,13 +305,7 @@
       tbody.appendChild(tr);
     });
 
-    var rodape = document.createElement('tr');
-    celula(rodape, 'Total do mês');
-    celula(rodape, numero.format(soma.cartao));
-    celula(rodape, numero.format(soma.pix));
-    celula(rodape, numero.format(soma.dinheiro), 'col-din');
-    celula(rodape, numero.format(soma.cartao + soma.pix + soma.dinheiro));
-    tfoot.appendChild(rodape);
+    tfoot.appendChild(linhaTotal(''));
   }
 
   btn.addEventListener('click', function () {
@@ -295,7 +327,7 @@
     enviar(dados, function (novaLista) {
       lista = novaLista || [];
       temDados = true;
-      salvarCache({ nome: atual.nome, cnpj: atual.cnpj, dinheiro: usaDinheiro, lista: lista });
+      salvarCache({ nome: atual.nome, cnpj: atual.cnpj, dinheiro: usaDinheiro, voucher: usaVoucher, lista: lista });
       desenharTabela(data);
       aviso('✓ Faturamento de ' + dataBR(data) + ' registrado: ' + reais(soma / 100), 'ok');
       elData.value = hojeISO();
@@ -315,18 +347,26 @@
     try { var t = localStorage.getItem(CHAVE_CACHE); return t ? JSON.parse(t) : null; } catch (e) { return null; }
   }
   function salvarCache(d) {
-    try { localStorage.setItem(CHAVE_CACHE, JSON.stringify({ nome: d.nome, cnpj: d.cnpj, dinheiro: d.dinheiro, lista: d.lista })); } catch (e) {}
+    try { localStorage.setItem(CHAVE_CACHE, JSON.stringify({ nome: d.nome, cnpj: d.cnpj, dinheiro: d.dinheiro, voucher: d.voucher, lista: d.lista })); } catch (e) {}
   }
   function apagarCache() {
     try { localStorage.removeItem(CHAVE_CACHE); } catch (e) {}
   }
 
-  // Clientes sem o campo Dinheiro: some o campo e a coluna, e o valor fica sempre zero
-  function definirDinheiro(sim) {
-    usaDinheiro = sim;
-    document.getElementById('blocoDinheiro').hidden = !sim;
-    document.querySelector('table').classList.toggle('sem-dinheiro', !sim);
-    if (!sim) { centavos.dinheiro = 0; mostrar('dinheiro'); atualizarTotal(); }
+  // Dinheiro e Voucher aparecem só para os clientes marcados na planilha; escondidos, o valor fica zero
+  function campoVisivel(c) {
+    return (c !== 'dinheiro' || usaDinheiro) && (c !== 'voucher' || usaVoucher);
+  }
+  function definirCampos(dinheiro, voucher) {
+    usaDinheiro = dinheiro;
+    usaVoucher = voucher;
+    document.getElementById('blocoDinheiro').hidden = !dinheiro;
+    document.getElementById('blocoVoucher').hidden = !voucher;
+    var tabela = document.querySelector('table');
+    tabela.classList.toggle('sem-dinheiro', !dinheiro);
+    tabela.classList.toggle('sem-voucher', !voucher);
+    CAMPOS.forEach(function (c) { if (!campoVisivel(c)) { centavos[c] = 0; mostrar(c); } });
+    atualizarTotal();
   }
 
   function aplicarDados(dados) {
@@ -335,7 +375,7 @@
     atual = { nome: dados.nome || '', cnpj: dados.cnpj || '' };
     document.getElementById('nome').textContent = atual.nome;
     document.getElementById('cnpj').textContent = atual.cnpj ? 'CNPJ ' + atual.cnpj : '';
-    definirDinheiro(dados.dinheiro !== false);
+    definirCampos(dados.dinheiro !== false, dados.voucher === true);
     desenharTabela(null);
     if (!elAviso.textContent && buscarDia(elData.value)) {
       aviso('Hoje já foi registrado. Se registrar de novo, os valores serão substituídos.', 'info');
@@ -348,6 +388,7 @@
   elData.value = hojeISO();
   elData.max = hojeISO();
   preencher(null);
+  definirCampos(true, false);
   var guardado = lerCache();
   if (guardado) aplicarDados(guardado);
   else { document.getElementById('nome').textContent = 'Carregando...'; desenharTabela(null); }
